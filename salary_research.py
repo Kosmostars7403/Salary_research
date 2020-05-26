@@ -4,17 +4,15 @@ from terminaltables import AsciiTable
 import os
 from dotenv import load_dotenv
 
-SJOB_TOKEN = os.getenv('SJOB_TOKEN')
-
 
 def predict_salary(salary_from, salary_to):
-    if salary_from is not None:
-        if salary_to is not None:
+    if salary_from:
+        if salary_to:
             average_salary = (salary_from + salary_to) / 2
         else:
             average_salary = salary_from * 1.2
     else:
-        if salary_to is not None:
+        if salary_to:
             average_salary = salary_to * 0.8
         else:
             average_salary = None
@@ -27,25 +25,32 @@ def predict_rub_salary_hh(job_title):
     payload = {'text': job_title,
                'area': 1,
                'period': 30}
-    response = requests.get(url, params=payload).json()
+    response = requests.get(url, params=payload)
+    response.raise_for_status()
+    response_data = response.json()
 
-    for page in range(response['pages'] + 1):
+
+    for page in range(response_data['pages'] + 1):
         payload = {'text': job_title,
                    'area': 1,
                    'period': 30,
                    'page': page}
-        response = requests.get(url, params=payload).json()
-        vacancies.extend(response['items'])
+        response = requests.get(url, params=payload)
+        response.raise_for_status()
+        response_data = response.json()
 
-    vacancies_found = response['found']
+        vacancies.extend(response_data['items'])
+
+    vacancies_found = response_data['found']
     average_salaries = []
     vacancies_processed = 0
     salaries_sum = 0
 
     for vacancy in vacancies:
-        if vacancy['salary'] is not None:
+        if vacancy['salary']:
             if vacancy['salary']['currency'] == 'RUR':
-                average_salary = predict_salary(vacancy['salary']['from'], vacancy['salary']['to'])
+                average_salary = predict_salary(vacancy['salary']['from'],
+                                                vacancy['salary']['to'])
                 average_salaries.append(average_salary)
             else:
                 average_salary = None
@@ -55,11 +60,9 @@ def predict_rub_salary_hh(job_title):
             average_salaries.append(average_salary)
 
     for salary in average_salaries:
-        if salary is not None:
+        if salary:
             vacancies_processed += 1
             salaries_sum += salary
-        else:
-            pass
 
     average_salary = int(salaries_sum / vacancies_processed)
 
@@ -75,10 +78,12 @@ def predict_rub_salary_sj(job_title):
         'period': 30,
         'keywords': job_title
     }
-    response = requests.get(url, headers=headers, params=payrole).json()
+    response = requests.get(url, headers=headers, params=payrole)
+    response.raise_for_status()
+    response_data = response.json()
 
     vacancies = []
-    vacancies_found = response['total']
+    vacancies_found = response_data['total']
     page_amount = math.ceil(vacancies_found / 20)
 
     for page in range(page_amount + 1):
@@ -89,31 +94,30 @@ def predict_rub_salary_sj(job_title):
             'keywords': job_title,
             'page': page
         }
-        response = requests.get(url, headers=headers, params=payrole).json()
-        vacancies.extend(response['objects'])
+        response = requests.get(url, headers=headers, params=payrole)
+        response.raise_for_status()
+        response_data = response.json()
+        vacancies.extend(response_data['objects'])
 
     average_salaries = []
     vacancies_processed = 0
     salaries_sum = 0
 
     for vacancy in vacancies:
-        if vacancy['payment'] is not None:
-            if vacancy['currency'] == 'rub':
-                average_salary = predict_salary(vacancy['payment_from'], vacancy['payment_to'])
-                average_salaries.append(average_salary)
-            else:
-                average_salary = None
-                average_salaries.append(average_salary)
+        if vacancy['currency'] == 'rub':
+            average_salary = predict_salary(vacancy['payment_from'],
+                                            vacancy['payment_to'])
+            average_salaries.append(average_salary)
         else:
             average_salary = None
             average_salaries.append(average_salary)
 
+
     for salary in average_salaries:
-        if salary is not None:
+        if salary:
             vacancies_processed += 1
             salaries_sum += salary
-        else:
-            pass
+
     average_salary = int(salaries_sum / vacancies_processed)
 
     return vacancies_found, vacancies_processed, average_salary
@@ -132,31 +136,16 @@ def fill_salary_data(func):
     return salary_data
 
 
-def ascii_table_hh(data):
-    table_data = [('Язык программирования', 'Вакансий найдено', 'Вакансий обработано', 'Средняя зарплата')]
-    for language in data:
-        #data_for_table = (1, language['vacancies_found'], language['vacancies_processed'], language['average_salary'])
-        data_for_table = (language, data[language]['vacancies_found'], data[language]['vacancies_processed'], data[language]['average_salary'])
-        table_data.append(data_for_table)
+def draw_ascii_table(salary_for_language_data, title):
+    salary_table_data = [('Язык программирования', 'Вакансий найдено',
+                          'Вакансий обработано', 'Средняя зарплата')]
+    for language in salary_for_language_data:
+        data_for_table = (language, salary_for_language_data[language]['vacancies_found'],
+                          salary_for_language_data[language]['vacancies_processed'],
+                          salary_for_language_data[language]['average_salary'])
+        salary_table_data.append(data_for_table)
 
-    title = 'HeadHunter Moscow'
-
-    table_instance = AsciiTable(table_data, title)
-    table_instance.justify_columns[2] = 'right'
-    print(table_instance.table)
-    print()
-
-
-def ascii_table_sj(data):
-    table_data = [('Язык программирования', 'Вакансий найдено', 'Вакансий обработано', 'Средняя зарплата')]
-    for language in data:
-        #data_for_table = (1, language['vacancies_found'], language['vacancies_processed'], language['average_salary'])
-        data_for_table = (language, data[language]['vacancies_found'], data[language]['vacancies_processed'], data[language]['average_salary'])
-        table_data.append(data_for_table)
-
-    title = 'SuperJob Moscow'
-
-    table_instance = AsciiTable(table_data, title)
+    table_instance = AsciiTable(salary_table_data, title)
     table_instance.justify_columns[2] = 'right'
     print(table_instance.table)
     print()
@@ -164,11 +153,13 @@ def ascii_table_sj(data):
 
 if __name__ == '__main__':
     load_dotenv()
-    languages = ['Python', 'JavaScript', 'Java', 'C++', 'Ruby', 'PHP', 'C#', 'C', 'TypeScript', 'Go']
+    SJOB_TOKEN = os.getenv('SJOB_TOKEN')
+
+    languages = ['Python', 'JavaScript', 'Java', 'C++',
+                 'Ruby', 'PHP', 'C#', 'C', 'TypeScript', 'Go']
 
     salary_for_languages_sj = fill_salary_data(predict_rub_salary_sj)
     salary_for_languages_hh = fill_salary_data(predict_rub_salary_hh)
 
-    ascii_table_hh(salary_for_languages_hh)
-    ascii_table_sj(salary_for_languages_sj)
-
+    draw_ascii_table(salary_for_languages_hh, 'HeadHunter, Moscow')
+    draw_ascii_table(salary_for_languages_sj, 'SuperJob, Moscow')
